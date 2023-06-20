@@ -6,6 +6,17 @@ import signal
 
 
 class NARS:
+    
+    TYPE_OPENNARS:str = 'opennars'
+    TYPE_ONA:str = 'ONA'
+    
+    @staticmethod
+    def create(type:str):
+        if type == NARS.TYPE_OPENNARS:
+            return opennars()
+        if type == NARS.TYPE_ONA:
+            return ONA()
+    
     def __init__(self, nars_type):  # nars_type: 'opennars' or 'ONA'
         self.inference_cycle_frequency = 1  # set too large will get delayed and slow down the game
         self.operation_left = False

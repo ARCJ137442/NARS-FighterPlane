@@ -12,10 +12,10 @@ OPENNARS_BABBLE_EVENT = pygame.USEREVENT + 3
 
 
 class PlaneGame:
-    def __init__(self, nars_type):
+    def __init__(self, nars_type, game_speed:float = 1.0, enable_punish:bool = False):
         print("Game initialization...")
         pygame.init()
-        self.game_speed = 1.0  # don't set too large, self.game_speed = 1.0 is the default speed.
+        self.game_speed = game_speed  # don't set too large, self.game_speed = 1.0 is the default speed.
         self.fps = 60 * self.game_speed
         self.nars_type = nars_type
         self.screen = pygame.display.set_mode(SCREEN_RECT.size)  # create a display surface, SCREEN_RECT.size=(480,700)
@@ -25,6 +25,8 @@ class PlaneGame:
         self.__create_NARS(self.nars_type)
         self.__set_timer()
         self.score = 0  # hit enemy
+        
+        self.enable_punish = enable_punish # 🆕enable to customize whether game punish NARS
 
     def __set_timer(self):
         CREATE_ENEMY_EVENT_TIMER = 1000
@@ -49,12 +51,11 @@ class PlaneGame:
         self.hero_group = pygame.sprite.Group(self.hero)
 
     def __create_NARS(self, type):
-        if type == 'opennars':
-            self.nars = opennars()
-            self.remaining_babble_times = 150
-        elif type == 'ONA':
-            self.nars = ONA()
-            self.remaining_babble_times = 0
+        self.nars = NARS.create(type)
+        self.remaining_babble_times = (
+            150 if type == NARS.TYPE_OPENNARS
+            else 0
+        )
 
     def start_game(self):
         print("Game start...")
@@ -104,10 +105,10 @@ class PlaneGame:
 
         collisions = pygame.sprite.spritecollide(self.hero, self.enemy_group, True,
                                                  collided=pygame.sprite.collide_circle_ratio(0.7))
-        if collisions:
-            # self.score -= len(collisions)
-            # self.nars.punish()
-            # print("bad")
+        if collisions and self.enable_punish:
+            self.score -= len(collisions)
+            self.nars.punish()
+            print("bad")
             pass
 
     def __update_sprites(self):
@@ -163,5 +164,26 @@ class PlaneGame:
 
 if __name__ == '__main__':
     #game = PlaneGame('ONA')  # input 'ONA' or 'opennars'
-    game = PlaneGame(sys.argv[1])
+    # 🆕optional argvs
+    nars_type:str = (
+        sys.argv[1] if len(sys.argv)>1
+        else type
+        if (type:=input("Please input the type of NARS(opennars(default)/ONA): "))
+        else NARS.TYPE_OPENNARS
+    )
+    game_speed:float = float(
+        sys.argv[2] if len(sys.argv)>2
+        else speed
+        if (speed:=input("Please input game speed(default 1.0): "))
+        else 1.0
+    )
+    enable_punish:bool = bool(
+        sys.argv[3] if len(sys.argv)>3
+        else input("Please input whether you want to punish NARS(empty for False): ")
+    )
+    game = PlaneGame(
+        nars_type = nars_type, 
+        game_speed = game_speed, 
+        enable_punish = enable_punish, 
+    )
     game.start_game()
