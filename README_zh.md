@@ -20,6 +20,8 @@ ONA: https://github.com/opennars/OpenNARS-for-Applications
 
 NARS-Pong in Unity3D: https://github.com/ccrock4t/NARS-Pong
 
+(原repo) NARS-FighterPlane by Boyang Xu: https://github.com/Noctis-Xu/NARS-FighterPlane
+
 ## Some tests 测试案例
 
 ![NARS-Fighter v2 gif](https://github.com/Noctis-Xu/images/blob/main/NARS-FighterPlane_v2.0.gif)
