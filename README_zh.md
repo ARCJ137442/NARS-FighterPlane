@@ -48,18 +48,18 @@ NARS-Pong in Unity3D: https://github.com/ccrock4t/NARS-Pong
     - 是否启用「惩罚」机制
   - 游戏内「键盘操作」功能
     - 上下左右/空格：移动&射击
-    - `G`：提醒目标（发送一个目标到NARS）
-    - `P`：「绘图」（从任意键被限制至此）
+    - `G`：提醒NARS目标
+    - `P`：根据游戏数据绘制图表
     - `B`：控制NARS的babble
       - `B`：增加10个babble时间
       - +`Shift`：减少10个babble时间
       - +`Alt`：立即发送一个babble
-    - `N`：直接输入NAL语句（不稳定）
+    - `N`：在命令行窗口直接输入NAL语句（不稳定）
       - 会暂停游戏运行
       - ！语句错误可能导致游戏崩溃
-    - `E`：启用/禁用 NARS输出
-      - +`Shift`：指定「操作」否则「感知」
-      - GUI有专门提示「NARS perception/operation off/on」
+    - `E`：启用/禁用 NARS的感知/操作
+      - +`Shift`：指定是「操作」否则「感知」
+      - GUI有专门提示：「NARS perception/operation off/on」
       - 禁用后，NARS执行的感知/操作无法送达Agent
 - ...
 
