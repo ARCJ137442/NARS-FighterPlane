@@ -11,12 +11,12 @@ UPDATE_NARS_EVENT = pygame.USEREVENT + 1
 OPENNARS_BABBLE_EVENT = pygame.USEREVENT + 2
 
 # 🆕尝试进行数据分析
-ENABLE_PERFORMANCE_PLOT:bool = False
+ENABLE_GAME_DATA_PLOT:bool = False
 try:
     import matplotlib.pyplot as plt
     import pandas as pd
     import multiprocessing as mp
-    ENABLE_PERFORMANCE_PLOT = True
+    ENABLE_GAME_DATA_PLOT = True
 except:
     pass
 
@@ -167,7 +167,7 @@ class PlaneGame:
         self.num_nars_operate:int = 0
         
         # 把数据存在游戏里
-        if ENABLE_PERFORMANCE_PLOT:
+        if ENABLE_GAME_DATA_PLOT:
             self.gameDatas:pd.DataFrame = pd.DataFrame(
                 [],
                 columns=[
@@ -237,6 +237,7 @@ class PlaneGame:
     def __event_handler(self):
         "处理事件"
         for event in pygame.event.get():
+            # 游戏退出
             if event.type == pygame.QUIT:
                 self.nars.disconnect_brain() # 🆕重定位：从「程序终止」到「断开连接」
                 PlaneGame.__game_over()
@@ -249,21 +250,59 @@ class PlaneGame:
                 self.nars.update(hero=self.hero, enemy_group=self.enemy_group)  # use objects' positions to update NARS's sensors
             # NARS babble
             elif event.type == OPENNARS_BABBLE_EVENT:
-                if self.remaining_babble_times == 0:
+                if self.remaining_babble_times <= 0:
+                    self.remaining_babble_times = 0 # 重置时间
                     pygame.event.set_blocked(OPENNARS_BABBLE_EVENT)
                 else:
                     self.nars.babble(2, NARSPlanePlayer.BABBLE_OPERATION_LIST) # 在指定范围内babble
                     self.remaining_babble_times -= 1
                     print('The remaining babble times: ' + str(self.remaining_babble_times))
-            # 🆕按键展示数据
+            # 键盘按键
+            elif event.type == pygame.KEYUP:
+                # 左右移动 PartⅡ：停止算法
+                if event.key == pygame.K_LEFT or event.key == pygame.K_RIGHT:
+                    self.nars.force_unconscious_operation(NARSPlanePlayer.OPERATION_DEACTIVATE)
             elif event.type == pygame.KEYDOWN:
-                if ENABLE_PERFORMANCE_PLOT: #event.unicode == 'P' and 
+                # 左右移动/停止（传入NARS构成BABBLE）
+                if event.key == pygame.K_LEFT:
+                    self.nars.force_unconscious_operation(NARSPlanePlayer.OPERATION_LEFT)
+                elif event.key == pygame.K_RIGHT:
+                    self.nars.force_unconscious_operation(NARSPlanePlayer.OPERATION_RIGHT)
+                elif event.key == pygame.K_DOWN:
+                    self.nars.force_unconscious_operation(NARSPlanePlayer.OPERATION_DEACTIVATE)
+                # G：提醒目标
+                elif event.key == pygame.K_g:
+                    self.nars.put_goal(self.nars.globalGoal)
+                # N：输入NAL语句（不推荐！）
+                elif event.key == pygame.K_n:
+                    self.nars.brain.add_to_cmd(input('Please input your NAL sentence(unstable): '))
+                # B：添加/移除babble
+                elif event.key == pygame.K_b:
+                    
+                    if event.mod == pygame.KMOD_ALT: # Alt+B：执行一个babble
+                        self.nars.babble(1, NARSPlanePlayer.BABBLE_OPERATION_LIST)
+                    else:
+                        self.remaining_babble_times += -10 if event.unicode == "B" else 10 # 可以用Shift指定加减
+                        if self.remaining_babble_times < 0:
+                            self.remaining_babble_times = 0 # 莫溢出
+                        pygame.event.set_allowed(OPENNARS_BABBLE_EVENT) # 重新开始监听事件
+                # E：开启/关闭NARS的感知/操作
+                elif event.key == pygame.K_e:
+                    if event.unicode == 'E': # 操作
+                        self.nars.enable_brain_control ^= True # 异或翻转
+                    else: # 感知
+                        self.nars.enable_brain_sense ^= True
+                # 空格/上：射击
+                elif event.key == pygame.K_SPACE or event.key == pygame.K_UP:
+                    self.nars.force_unconscious_operation(NARSPlanePlayer.OPERATION_FIRE)
+                # P：展示游戏数据
+                elif event.key == pygame.K_p and ENABLE_GAME_DATA_PLOT:
                     mp.Process(target=plotDatas, args=(self.gameDatas,)).start()
         # NARS 执行操作（时序上依赖游戏，而非NARS程序）
         self.nars.handle_operations(self.hero) # 🆕解耦：封装在「NARSPlanePlayer」中
         
         # 🆕记录游戏数据
-        ENABLE_PERFORMANCE_PLOT and self.collectData()
+        ENABLE_GAME_DATA_PLOT and self.collectData()
 
     def __check_collide(self):
         "检查碰撞"
@@ -340,6 +379,8 @@ class PlaneGame:
         surface_nars_type = self.font.render(self.nars_type.value, True, [235, 235, 20])
         surface_version = self.font.render('v1.0', True, [235, 235, 20])
         surface_operation = self.font.render('Operation: %s' % operation_text, True, [235, 235, 20])
+        surface_nars_perception_enable = self.font.render(f'NARS operation {"on" if self.nars.enable_brain_control else "off"}', True, [235, 235, 20]) # 🆕指示NARS是否能感知
+        surface_nars_operation_enable = self.font.render(f'NARS perception {"on" if self.nars.enable_brain_sense else "off"}', True, [235, 235, 20]) # 🆕指示NARS是否能操作
         self.screen.blit(surface_operation, [20, 10])
         self.screen.blit(surface_babbling, [20, 30])
         self.screen.blit(surface_time, [20, 50])
@@ -348,6 +389,8 @@ class PlaneGame:
         self.screen.blit(surface_fps, [370, 30])
         self.screen.blit(surface_nars_type, [5, 680])
         self.screen.blit(surface_version, [435, 680])
+        self.screen.blit(surface_nars_perception_enable, [20, 90])
+        self.screen.blit(surface_nars_operation_enable, [20, 110])
 
     @staticmethod
     def __game_over():
@@ -355,7 +398,7 @@ class PlaneGame:
         print("Game over...")
         exit()
 
-if ENABLE_PERFORMANCE_PLOT:
+if ENABLE_GAME_DATA_PLOT:
     from math import ceil
     def plotDatas(datas:pd.DataFrame):
         "🆕展示游戏数据图表"

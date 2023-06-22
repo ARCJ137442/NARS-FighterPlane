@@ -52,24 +52,24 @@ class NARSAgent:
     
     '表示「自我」的对象'
     OBJECT_SELF:str = 'SELF'
+    SELF:str = '{%s}' % OBJECT_SELF # 嵌入「自我」词项（必须是{专名}的形式）
     
     # NAL语句模板区 #
 
     '指示「自我正在执行某操作」'
-    BABBLE_TEMPLETE:str = f'<(*,{OBJECT_SELF}) --> %s>. :|:'
-    BABBLE_SENTENCE = lambda enumOperation: NARSAgent.BABBLE_TEMPLETE % enumOperation.value
+    BABBLE_TEMPLETE:str = f'<(*,{SELF}) --> %s>. :|:'
     
     '指示「某个对象有某个状态」'
     SENSE_TEMPLETE:str = '<{%s} --> [%s]>. :|:'
     
     '指示「自我需要达到某个目标」'
-    GOAL_TEMPLETE:str = f'<{OBJECT_SELF} --> [%s]>! :|:' # ？是否一定要一个「形容词」？
+    GOAL_TEMPLETE:str = f'<{SELF} --> [%s]>! :|:' # ？是否一定要一个「形容词」？
     
     '指示「某目标被实现」'
-    PRAISE_TEMPLETE = f'<{OBJECT_SELF} --> [%s]>. :|:'
+    PRAISE_TEMPLETE = f'<{SELF} --> [%s]>. :|:'
     
     '指示「某目标未实现」'
-    PUNISH_TEMPLETE = f'(--,<{OBJECT_SELF} --> [%s]>). :|:'
+    PUNISH_TEMPLETE = f'(--,<{SELF} --> [%s]>). :|:'
     # '<{SELF} --> [good]>. :|: %0%' # opennars' grammar
     # '<{SELF} --> [good]>. :|: {0}' # ONA's grammar
     # 📝不同的NARS实现，可能对「反向真值」有不同的语法
@@ -77,10 +77,10 @@ class NARSAgent:
     def __init__(self, nars_type:NARSType=None, globalGoal:str = None):  # nars_type: 'opennars' or 'ONA'
         # 🆕使用字典记录操作，并在后面重载「__getitem__」方法实现快捷读写操作
         self._operation_container:dict[NARSOperation:bool] = dict() # 空字典
-        # 定义自身用到的「NARS程序」类型
-        self.type:NARSType = nars_type
         # 使用「对象复合」的形式，把「具体程序启动」的部分交给「NARSProgram」处理
         self.brain:NARSProgram = None
+        self.enable_brain_control:bool = True # 决定是否「接收NARS操作」
+        self.enable_brain_sense:bool = True # 决定是否「接收外界感知」
         if nars_type: # 🆕若没有输入nars_type，也可以后续再初始化
             self.equip_brain(nars_type)
         # 定义自身的「总目标」
@@ -99,6 +99,8 @@ class NARSAgent:
     
     def equip_brain(self, nars_type:NARSType): # -> NARSProgram
         "🆕（配合disconnect可重复使用）装载自己的「大脑」：上载一个NARS程序，使得其可以进行推理"
+        # 定义自身用到的「NARS程序」类型
+        self.type:NARSType = nars_type
         if self.brain: # 已经「装备」则报错
             raise "Already equipped a program!"
         self.brain:NARSProgram = NARSProgram.fromType(
@@ -117,8 +119,7 @@ class NARSAgent:
         if not probability or random.randint(1,probability) == 1: # 几率触发
             # 随机取一个NARS操作
             operation:NARSOperation = random.choice(operations)
-            self.__put_nal_sentence(NARSAgent.BABBLE_SENTENCE(operation)) # 添加一个Babble
-            self.store_operation(operation) # 执行Babble
+            self.force_unconscious_operation(operation) # 相当于「强制无意识操作」
 
     def update(self, *args, **kwargs):  # update sensors (object positions), remind goals, and make inference
         "NARS在环境中的行动：感知更新→目标提醒→推理步进"
@@ -142,6 +143,8 @@ class NARSAgent:
     
     def add_sense_object(self, objectName:str, stateName:str):
         "🆕统一添加感知"
+        if not self.enable_brain_sense: # 若没「启用大脑感知」，直接返回
+            return
         self.__put_nal_sentence(NARSAgent.SENSE_TEMPLETE % (objectName, stateName)) # 套模板
         self._total_sense_inputs += 1 # 计数
     
@@ -187,12 +190,21 @@ class NARSAgent:
             for name in self._operation_container
             }.__iter__() # 返回字典的迭代器
     
+    def force_unconscious_operation(self, operation:NARSOperation):
+        "强制「无意识操作」：让智能体执行，仅告诉NARS程序「我执行了这个操作」"
+        # TODO 问题：这样的语句对ONA不起效（输入后程序报错，游戏闪退），可能是「不同程序实现」的语法问题（是否要分离到具体的Program？）
+        if self.type != NARSType.ONA: # ONA无效：语句「<(*,{SELF}) --> ^deactivate>. :|:」报错「OSError: [Errno 22] Invalid argument」
+            self.__put_nal_sentence(NARSAgent.BABBLE_TEMPLETE % operation.value) # 置入「自己在进行什么操作」
+        self.store_operation(operation) # 智能体：执行操作
+    
     def store_operation(self, operation:NARSOperation):
-        "🆕存储对应操作，更新自身状态"
+        "存储对应操作，更新自身状态"
         self[operation] = True # 直接设置对应「要执行的操作」为真
     
     def handle_program_operation(self, operation:NARSOperation):
-        "🆕对接命令行与游戏：根据NARS程序返回的操作字符串，存储相应操作"
+        "对接命令行与游戏：根据NARS程序返回的操作字符串，存储相应操作"
+        if not self.enable_brain_control: # 若没「启用大脑操作」，直接返回
+            return
         self.store_operation(operation) # 存储操作
         self._total_initiative_operates += 1 # 增加接收的操作次数
     
