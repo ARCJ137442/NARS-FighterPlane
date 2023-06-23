@@ -101,13 +101,13 @@ class NARSAgent:
     # 📝不同的NARS实现，可能对「反向真值」有不同的语法
     
     def __init__(self, nars_type:NARSType=None, mainGoal:str = None, mainGoal_negative:str = None):  # nars_type: 'opennars' or 'ONA'
-        # 🆕使用字典记录操作，并在后面重载「__getitem__」方法实现快捷读写操作
+        # 使用字典记录操作，并在后面重载「__getitem__」方法实现快捷读写操作
         self._operation_container:dict[NARSOperation:bool] = dict() # 空字典
         # 使用「对象复合」的形式，把「具体程序启动」的部分交给「NARSProgram」处理
         self.brain:NARSProgram = None
         self.enable_brain_control:bool = True # 决定是否「接收NARS操作」
         self.enable_brain_sense:bool = True # 决定是否「接收外界感知」
-        if nars_type: # 🆕若没有输入nars_type，也可以后续再初始化
+        if nars_type: # 若没有输入nars_type，也可以后续再初始化
             self.equip_brain(nars_type)
         # 定义自身的「总目标」
         self.mainGoal:str = mainGoal
@@ -117,6 +117,9 @@ class NARSAgent:
         # 操作相关
         self._total_initiative_operates:int = 0 # 从NARS程序接收的操作总数
     
+    def __del__(self) -> None:
+        self.disconnect_brain()
+    
     # 程序实现相关 #
     
     @property
@@ -125,7 +128,7 @@ class NARSAgent:
         return self.brain != None
     
     def equip_brain(self, nars_type:NARSType): # -> NARSProgram
-        "🆕（配合disconnect可重复使用）装载自己的「大脑」：上载一个NARS程序，使得其可以进行推理"
+        "（配合disconnect可重复使用）装载自己的「大脑」：上载一个NARS程序，使得其可以进行推理"
         # 定义自身用到的「NARS程序」类型
         self.type:NARSType = nars_type
         if self.brain: # 已经「装备」则报错
@@ -137,7 +140,7 @@ class NARSAgent:
         self.brain.operationHook = self.handle_program_operation
     
     def disconnect_brain(self):
-        "🆕与游戏「解耦」，类似「断开连接」的作用"
+        "与游戏「解耦」，类似「断开连接」的作用"
         del self.brain # TODO 这里的作用不甚明了……应该是「暂停程序运行」，但实际上「删掉了自己的大脑」
         self.brain = None # 空置，以便下一次定义
     
@@ -157,11 +160,11 @@ class NARSAgent:
     
     # 语句相关 #
     def _put_nal_sentence(self, sentence:str) -> None:
-        "🆕通用模块：向NARS体置入一个NAL语句（不建议直接使用）"
+        "通用模块：向NARS体置入一个NAL语句（不建议直接使用）"
         self.brain.add_to_cmd(sentence) # 实际就是向「大脑」注入，不过未来可以进一步拓展
     
     def _inference_step(self) -> None:
-        "🆕通用模块：让NARS体「思考一个周期」"
+        "通用模块：让NARS体「思考一个周期」"
         self.brain.update_inference_cycles()
     
     # 感知相关 #
@@ -170,10 +173,11 @@ class NARSAgent:
         pass
     
     def add_sense(self, perception:NARSPerception) -> None:
+        "添加感知"
         return self.add_sense_object(perception)
     
     def add_sense_object(self, objectName:str, stateName:str) -> None:
-        "🆕统一添加感知"
+        "统一添加感知"
         if not self.enable_brain_sense: # 若没「启用大脑感知」，直接返回
             return
         self._put_nal_sentence(NARSAgent.SENSE_TEMPLETE % (objectName, stateName)) # 套模板

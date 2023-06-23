@@ -9,7 +9,7 @@ from NARS import NARSAgent, NARSOperation, NARSType
 CREATE_ENEMY_EVENT = pygame.USEREVENT
 UPDATE_NARS_EVENT = pygame.USEREVENT + 1
 OPENNARS_BABBLE_EVENT = pygame.USEREVENT + 2
-INGAME_CLOCK_EVENT = pygame.USEREVENT + 3 # 🆕游戏内时间计数（速度可调之后）
+INGAME_CLOCK_EVENT = pygame.USEREVENT + 3 # 游戏内时间计数（速度可调之后）
 
 # 尝试进行数据分析
 ENABLE_GAME_DATA_PLOT:bool = False
@@ -40,7 +40,7 @@ class NARSPlanePlayer(NARSAgent):
     ]
     
     # NAL词项区 #
-    # 🆕去硬编码：专门存储NAL语句（注：此处的时态都是「现在时」）
+    # 去硬编码：专门存储NAL语句（注：此处的时态都是「现在时」）
     
     # 定义目标
     GOAL_GOOD:str = 'good'
@@ -54,7 +54,7 @@ class NARSPlanePlayer(NARSAgent):
     SENSE_RIGHT:str = 'right'
     SENSE_AHEAD:str = 'ahead'
     
-    # 🆕定义新感知
+    # 定义新感知
     SENSE_EDGE_LEFT:str = 'edge_left'
     SENSE_EDGE_RIGHT:str = 'edge_right'
     
@@ -87,7 +87,7 @@ class NARSPlanePlayer(NARSAgent):
         "重构：处理「冲突的移动方式」"
         super().store_operation(operation)
         
-        # 🆕代码功能分离：把剩下的代码看做是某种「冲突」
+        # 代码功能分离：把剩下的代码看做是某种「冲突」
         if operation == NARSPlanePlayer.OPERATION_LEFT:  # NARS gives <(*,{SELF}) --> ^left>. :|:
             self[NARSPlanePlayer.OPERATION_RIGHT] = False
             # print('move left')
@@ -130,17 +130,11 @@ class NARSPlanePlayer(NARSAgent):
         # 🆕速度感：感知自己的运动速度
         
         if hero.isAtEdge or hero.speed == 0: # 因为图形「先移动再约束」的运作方式，边界上的「速度」不为零但确实是停下来的
-            self.add_sense_self(
-                NARSPlanePlayer.SENSE_STILL
-            )
+            self.add_sense_self(NARSPlanePlayer.SENSE_STILL)
         elif hero.speed < 0:
-            self.add_sense_self(
-                NARSPlanePlayer.SENSE_LEFT
-            )
+            self.add_sense_self(NARSPlanePlayer.SENSE_LEFT)
         elif hero.speed > 0:
-            self.add_sense_self(
-                NARSPlanePlayer.SENSE_MOVING_RIGHT
-            )
+            self.add_sense_self(NARSPlanePlayer.SENSE_MOVING_RIGHT)
         
         # 对敌感知 #
         
@@ -174,7 +168,7 @@ class NARSPlanePlayer(NARSAgent):
             self.add_sense_object(NARSPlanePlayer.OBJECT_ENEMY,NARSPlanePlayer.SENSE_AHEAD)
     
     def handle_operations(self, hero:Hero):
-        "🆕分模块：处理NARS发送的操作（返回：是否有操作被执行）"
+        "分模块：处理NARS发送的操作（返回：是否有操作被执行）"
         # 左右移动：有操作就不撤回（留给先前的「操作冲突」模块）
         if self[NARSPlanePlayer.OPERATION_LEFT]:
             hero.speed = -4
@@ -200,48 +194,60 @@ class PlaneGame:
     
     @property
     def game_speed(self) -> float:
-        "🆕独立出「游戏速度」变量，使其可以和fps一并绑定"
+        "独立出「游戏速度」变量，使其可以和fps一并绑定"
         return self._game_speed
     
     @game_speed.setter
     def game_speed(self, value:float) -> None:
+        if value <= 0: # 防止速度下降到非正数
+            return
         self._game_speed:float = value
         self.fps:int = int(60 * self._game_speed)
+        print(f'game speed = {self.game_speed:.2f}')
+        self.__set_timer() # 覆盖之前的定时器
     
     def __init__(self, nars_type:NARSType, game_speed:float = 1.0, enable_punish:bool = False):
         "初始化游戏本体"
         print("Game initialization...")
         pygame.init()
-        self.game_speed = game_speed  # don't set too large, self.game_speed = 1.0 is the default speed.
         self.nars_type = nars_type
         self.screen = pygame.display.set_mode(SCREEN_RECT.size)  # create a display surface, SCREEN_RECT.size=(480,700)
         self.clock = pygame.time.Clock()  # create a game clock
         self.font = pygame.font.SysFont('consolas', 18, True)  # display text like scores, times, etc.
         self.__create_sprites()  # sprites initialization
         self.__create_NARS(self.nars_type)
-        self.__set_timer()
+        # 原「__set_timer」被移动到setter内，以便统一修改
+        self.game_speed = game_speed  # don't set too large, self.game_speed = 1.0 is the default speed.
+        self.auto_speed_delta:float = 0 # 🆕自动加速的加速步进大小
         self.score:int = 0  # hit enemy
-        self.speeding_delta_time_s:int = 0 # 🆕现在因「游戏速度」可动态调整，*游戏内*时间需要一个专门的时钟进行评估
+        self.speeding_delta_time_s:int = 0 # 现在因「游戏速度」可动态调整，*游戏内*时间需要一个专门的时钟进行评估
         
         # enable to customize whether game punish NARS
         self.enable_punish:bool = enable_punish
         
         self.num_nars_operate:int = 0
         
+        # speed melt down mechanism to prevent game stuck
+        self.last_display_update_time:int = 0
+        self.speed_melt_down:float = 0 # 游戏卡死时暂存的当前速度
+        self.num_melt_down_before_restore:int = 0 # 游戏速度在恢复前熔断的次数
+        
         # 把数据存在游戏里
         if ENABLE_GAME_DATA_PLOT:
             self.gameDatas:pd.DataFrame = pd.DataFrame(
                 [],
                 columns=[
+                    'ingame_time',
                     'performance',
                     'sense rate',
                     'activation rate',
                 ]
             )
 
-    def collectData(self) -> None:
+    def collectDatas(self) -> None:
         "（同步）获取游戏运行的各项数据"
         self.gameDatas.loc[len(self.gameDatas)] = {
+            'ingame_time': self.speeding_delta_time_s, # 游戏内时间
             'performance': self.performance, # 表现
             'sense rate': ( # 每（游戏内）秒送入NARS程序的感知语句数
                 self.nars.total_senses / self.speeding_delta_time_s
@@ -257,11 +263,11 @@ class PlaneGame:
 
     def __set_timer(self):
         "设置定时器（用于后面的时序事件）"
-        CLOCK_EVENT_TIMER = 1000 # 🆕设置「不随速度影响的时钟」
+        INGAME_CLOCK_EVENT_TIMER = 1000 # 设置「游戏内读秒」时钟
         CREATE_ENEMY_EVENT_TIMER = 1000
         UPDATE_NARS_EVENT_TIMER = 200
         OPENNARS_BABBLE_EVENT_TIMER = 250
-        timer_ingame_clock = int(CLOCK_EVENT_TIMER / self.game_speed)
+        timer_ingame_clock = int(INGAME_CLOCK_EVENT_TIMER / self.game_speed)
         timer_enemy = int(CREATE_ENEMY_EVENT_TIMER / self.game_speed)
         timer_update_NARS = int(UPDATE_NARS_EVENT_TIMER / self.game_speed)
         timer_babble = int(OPENNARS_BABBLE_EVENT_TIMER / self.game_speed)
@@ -301,14 +307,52 @@ class PlaneGame:
 
     def __event_handler(self):
         "处理事件"
+        dt:int = self.speeding_delta_time_s - self.last_display_update_time
+        # 熔断恢复
+        if dt <= 0 and self.speed_melt_down > 0: # 卡顿后恢复
+            # 恢复易卡事件
+            pygame.event.set_allowed(CREATE_ENEMY_EVENT)
+            pygame.event.set_allowed(UPDATE_NARS_EVENT)
+            # 恢复速度
+            self.game_speed = self.speed_melt_down - 0.1 * self.num_melt_down_before_restore # 在减速中恢复稳态
+            print(f'Game stuck restored with speed={self.game_speed}!')
+            # 实在没办法时，清理所有敌机
+            if self.game_speed <= 0.1:
+                self.remove_all_enemy()
+            # 重置熔断数据
+            self.speed_melt_down = 0
+            self.num_melt_down_before_restore = 0
+        # 开始处理事件
         for event in pygame.event.get():
             # 游戏退出
             if event.type == pygame.QUIT:
-                self.nars.disconnect_brain() # 🆕重定位：从「程序终止」到「断开连接」
+                self.nars.disconnect_brain() # 重定位：从「程序终止」到「断开连接」
                 PlaneGame.__game_over()
-            # 时钟步进（现实时间）
+            # 时钟步进（游戏内时间）
             elif event.type == INGAME_CLOCK_EVENT:
-                self.speeding_delta_time_s += 1 # 时间计数
+                # 自动加速
+                if self.auto_speed_delta:
+                    print(f'auto speed up {self.game_speed} --[+{self.auto_speed_delta}]-> {self.game_speed+self.auto_speed_delta}')
+                    self.game_speed += self.auto_speed_delta
+                # 避免游戏过卡：游戏速率熔断机制
+                dt:int = self.speeding_delta_time_s - self.last_display_update_time
+                if dt > 0: # 过度迟滞
+                    print(f'Game stuck detected with dt={dt} at speed={self.game_speed}!')
+                    # 屏蔽易卡事件
+                    pygame.event.set_blocked(CREATE_ENEMY_EVENT)
+                    pygame.event.set_blocked(UPDATE_NARS_EVENT)
+                    # 存储速度
+                    if self.speed_melt_down == 0: # 只存储一次
+                        self.speed_melt_down = self.game_speed # 熔断-暂存速度
+                    # 强制降低游戏速度
+                    self.game_speed = 0.1
+                    self.num_melt_down_before_restore += 1 # 增加熔断次数
+                    # 停止自动加速
+                    if self.auto_speed_delta:
+                        self.auto_speed_delta = 0
+                        print('Automatic acceleration stop.')
+                # 时间计数
+                self.speeding_delta_time_s += 1
             # 周期性创建敌机
             elif event.type == CREATE_ENEMY_EVENT:
                 enemy = Enemy()
@@ -331,55 +375,83 @@ class PlaneGame:
                 if event.key == pygame.K_LEFT or event.key == pygame.K_RIGHT:
                     self.nars.force_unconscious_operation(NARSPlanePlayer.OPERATION_DEACTIVATE)
             elif event.type == pygame.KEYDOWN:
+                key:int = event.key
+                key_mods:int = pygame.key.get_mods() # 键盘按键模式检测
+                # +/-：调整游戏速度（不影响事件派发？）
+                if key == pygame.K_EQUALS: # 是等号键
+                    if key_mods & pygame.KMOD_CTRL: # 倍速
+                        self.game_speed *= 2
+                    elif key_mods & pygame.KMOD_ALT: # 自动加速模块
+                        self.auto_speed_delta += 0.1
+                        print(f'Automatic acceleration with dv={self.auto_speed_delta}')
+                    else:
+                        self.game_speed += 0.25
+                elif key == pygame.K_MINUS:
+                    if key_mods & pygame.KMOD_SHIFT: # 重置速度回1
+                        self.game_speed = 1.0
+                    elif key_mods & pygame.KMOD_CTRL: # 半速
+                        self.game_speed *= 0.5
+                    else:
+                        self.game_speed -= 0.25 # 有「避免非负机制」
+                # C：清除所有敌机
+                elif key == pygame.K_c:
+                    self.remove_all_enemy()
+                # P：展示游戏数据
+                elif key == pygame.K_p and ENABLE_GAME_DATA_PLOT:
+                    if key_mods & pygame.KMOD_ALT:
+                        mp.Process(target=saveDatas, args=(self.gameDatas,)).start()
+                    else:
+                        mp.Process(target=plotDatas, args=(self.gameDatas,)).start()
                 # 左右移动/停止（传入NARS构成BABBLE）
-                if event.key == pygame.K_LEFT:
+                elif key == pygame.K_LEFT:
                     self.nars.force_unconscious_operation(NARSPlanePlayer.OPERATION_LEFT)
-                elif event.key == pygame.K_RIGHT:
+                elif key == pygame.K_RIGHT:
                     self.nars.force_unconscious_operation(NARSPlanePlayer.OPERATION_RIGHT)
-                elif event.key == pygame.K_DOWN:
+                elif key == pygame.K_DOWN:
                     self.nars.force_unconscious_operation(NARSPlanePlayer.OPERATION_DEACTIVATE)
-                # G：提醒目标
-                elif event.key == pygame.K_g:
-                    self.nars.put_goal(self.nars.mainGoal)
-                # S：调整游戏速度（不影响事件派发？）
-                elif event.key == pygame.K_s:
-                    new_speed:float = self.game_speed + (
-                        -0.25 if event.unicode == 'S' # Shift减速
-                        else 0.25
-                    )
-                    if new_speed > 0: # 防止速度下降到非正数
-                        self.game_speed = new_speed
-                        self.__set_timer() # 覆盖之前的定时器（不建议移入setter）
-                        print(f'game speed = {self.game_speed:.2f}')
+                # U：开关「是否惩罚」
+                elif key == pygame.K_u:
+                    self.enable_punish ^= True
+                    print(f'NARS punishments {"on" if self.enable_punish else "off"}.')
+                # G：操作目标
+                elif key == pygame.K_g:
+                    if key_mods & pygame.KMOD_CTRL: # +Ctrl: 重置目标
+                        if key_mods & pygame.KMOD_SHIFT: # +Shift: 重置负向目标
+                            self.nars.mainGoal_negative = input(f'Please input a new goal to replace [{self.nars.mainGoal}]: ')
+                        else:
+                            self.nars.mainGoal = input(f'Please input a new goal to replace [{self.nars.mainGoal}]: ')
+                    else:
+                        self.nars.put_goal(self.nars.mainGoal)
+                        print(f'Current goals: +{self.nars.mainGoal} | -{self.nars.mainGoal_negative}')
                 # N：输入NAL语句（不推荐！）
-                elif event.key == pygame.K_n:
+                elif key == pygame.K_n:
                     self.nars.brain.add_to_cmd(input('Please input your NAL sentence(unstable): '))
                 # B：添加/移除babble
-                elif event.key == pygame.K_b:
-                    if event.mod == pygame.KMOD_ALT: # Alt+B：执行一个babble
+                elif key == pygame.K_b:
+                    if key_mods & pygame.KMOD_ALT: # Alt+B：执行一个babble
                         self.nars.babble(1, NARSPlanePlayer.BABBLE_OPERATION_LIST)
                     else:
-                        self.remaining_babble_times += -10 if event.unicode == "B" else 10 # 可以用Shift指定加减
-                        if self.remaining_babble_times < 0:
+                        self.remaining_babble_times += (
+                            -10 if key_mods & pygame.KMOD_SHIFT
+                            else 10
+                            ) # 可以用Shift指定加减
+                        if self.remaining_babble_times <= 0:
                             self.remaining_babble_times = 0 # 莫溢出
-                        pygame.event.set_allowed(OPENNARS_BABBLE_EVENT) # 重新开始监听事件
+                        else: # 重新开始监听事件
+                            pygame.event.set_allowed(OPENNARS_BABBLE_EVENT)
                 # E：开启/关闭NARS的感知/操作
-                elif event.key == pygame.K_e:
-                    if event.unicode == 'E': # 操作
+                elif key == pygame.K_e:
+                    if key_mods & pygame.KMOD_SHIFT: # 操作
                         self.nars.enable_brain_control ^= True # 异或翻转
                     else: # 感知
                         self.nars.enable_brain_sense ^= True
                 # 空格/上：射击
-                elif event.key == pygame.K_SPACE or event.key == pygame.K_UP:
+                elif key == pygame.K_SPACE or key == pygame.K_UP:
                     self.nars.force_unconscious_operation(NARSPlanePlayer.OPERATION_FIRE)
-                # P：展示游戏数据
-                elif event.key == pygame.K_p and ENABLE_GAME_DATA_PLOT:
-                    mp.Process(target=plotDatas, args=(self.gameDatas,)).start()
         # NARS 执行操作（时序上依赖游戏，而非NARS程序）
-        self.nars.handle_operations(self.hero) # 🆕解耦：封装在「NARSPlanePlayer」中
-        
-        # 🆕记录游戏数据
-        ENABLE_GAME_DATA_PLOT and self.collectData()
+        self.nars.handle_operations(self.hero) # 解耦：封装在「NARSPlanePlayer」中
+        # 记录游戏数据
+        ENABLE_GAME_DATA_PLOT and self.collectDatas()
 
     def __check_collide(self):
         "检查碰撞"
@@ -399,10 +471,10 @@ class PlaneGame:
             self.nars.punish()
             print("bad")
             pass
-                
-
+    
     def __update_sprites(self):
         "更新图形"
+        self.last_display_update_time = self.speeding_delta_time_s
         self.background_group.update()
         self.background_group.draw(self.screen)
         self.enemy_group.update()
@@ -413,7 +485,13 @@ class PlaneGame:
         self.hero.bullets.draw(self.screen)
         self.__display_text()
 
-    # 🆕游戏信息：使用property封装属性
+    def remove_all_enemy(self) -> None:
+        "🆕移除所有敌机"
+        for enemy in self.enemy_group:
+            enemy.kill()
+        self.enemy_group.empty()
+    
+    # 游戏信息：使用property封装属性
     @property
     def current_time(self) -> int:
         return pygame.time.get_ticks()
@@ -449,16 +527,18 @@ class PlaneGame:
         surface_fps = self.font.render('FPS: %d' % self.clock.get_fps(), True, [235, 235, 20])
         surface_babbling = self.font.render('Babbling: %d' % self.remaining_babble_times, True, [235, 235, 20])
         surface_nars_type = self.font.render(self.nars_type.value, True, [235, 235, 20])
-        surface_version = self.font.render('v1.0', True, [235, 235, 20])
+        surface_version = self.font.render('v2.i', True, [235, 235, 20])
         surface_operation = self.font.render('Operation: %s' % operation_text, True, [235, 235, 20])
-        surface_nars_perception_enable = self.font.render(f'NARS perception {"on" if self.nars.enable_brain_sense else "off"}', True, [235, 235, 20]) # 指示NARS能否感知
-        surface_nars_operation_enable = self.font.render(f'NARS operation {"on" if self.nars.enable_brain_control else "off"}', True, [235, 235, 20]) # 指示NARS能否操作
+        surface_nars_perception_enable = self.font.render(f'NARS Perception: {"on" if self.nars.enable_brain_sense else "off"}', True, [235, 235, 20]) # 指示NARS能否感知
+        surface_nars_operation_enable = self.font.render(f'NARS Operation: {"on" if self.nars.enable_brain_control else "off"}', True, [235, 235, 20]) # 指示NARS能否操作
+        surface_game_speed = self.font.render('Speed: %.2f' % self.game_speed, True, [235, 235, 20]) # 指示游戏速度
         self.screen.blit(surface_operation, [20, 10])
         self.screen.blit(surface_babbling, [20, 30])
         self.screen.blit(surface_time, [20, 50])
         self.screen.blit(surface_performance, [20, 70])
         self.screen.blit(surface_score, [370, 10])
         self.screen.blit(surface_fps, [370, 30])
+        self.screen.blit(surface_game_speed, [370, 50])
         self.screen.blit(surface_nars_type, [5, 680])
         self.screen.blit(surface_version, [435, 680])
         self.screen.blit(surface_nars_perception_enable, [20, 90])
@@ -471,27 +551,52 @@ class PlaneGame:
         exit()
 
 if ENABLE_GAME_DATA_PLOT:
+    
     from math import ceil
     def plotDatas(datas:pd.DataFrame):
-        "🆕展示游戏数据图表"
-        num_plots = len(datas.columns)
+        "展示游戏数据图表"
+        
+        # 处理「时间」
+        timeSeries = datas['ingame_time']
+        # timeSeries = timeSeries[::len(timeSeries)//10+1] # 初次均匀截取十个（暂不需要）
+        timeSeries = timeSeries.drop_duplicates() # 丢掉重复值，让「游戏内时间」与索引脱离（开始不均匀）
+        timeSeries = timeSeries[::len(timeSeries)//10+1] # 保留最多十个刻度（避免后续刻度太接近）
+        timeRange = timeSeries.index # 获取索引值
+        # datas = datas.drop(columns='ingame_time') # 去掉「时间数据」
+        
+        # 规划图表
+        num_plots:int = len(datas.columns)
         shape_rows:int = int(num_plots**0.5)
-        subplot_shape = (int(shape_rows), ceil(num_plots / shape_rows)) # 自动计算尺寸
+        subplot_shape:tuple[int] = (int(shape_rows), ceil(num_plots / shape_rows)) # 自动计算尺寸
         fig, axes = plt.subplots(*subplot_shape)
         fig.suptitle('Game Datas')
-
+        
+        # 绘制图表
         for i, serieName in enumerate(datas.columns):
-            ax = axes[i]
+            ax = axes.flatten()[i] # 铺平，以便于逐个获取（在子图表超过一行时失效）
+            # ax.plot(timeSeries,datas[serieName]) # 要求曲线精度够高，横轴坐标还有有可比性意义
+            # print(ax,axes,i,datas[serieName],timeSeries)
             datas[serieName].plot(ax=ax)
             ax.set_title(serieName)
+            # 🆕设置横轴坐标为「游戏内时间」，并能反映游戏速度的变化
+            
+            ax.set_xticks(timeRange) # 反映「游戏内时间到t时被记录到的索引值」
+            ax.set_xticklabels(timeSeries)
+            ax.set_xlabel('time')
 
         plt.tight_layout()
         plt.show()
+    
+    DATA_FILE_NAME = 'game_datas.xlsx'
+    def saveDatas(datas:pd.DataFrame):
+        "存储游戏数据到excel文件"
+        datas.to_excel(DATA_FILE_NAME)
+        print(f'Game datas are exported to {DATA_FILE_NAME}.')
 
 
 if __name__ == '__main__':
     #game = PlaneGame('opennars')  # input 'ONA' or 'opennars'
-    # 🆕可选参数
+    # 可选参数
     nars_type:NARSType = (
         NARSType(sys.argv[1]) if len(sys.argv)>1
         else NARSType(type)
