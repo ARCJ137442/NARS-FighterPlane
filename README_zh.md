@@ -14,13 +14,13 @@ NARS-FighterPlane 是一个以 *NARS* 作为AI玩家，操纵战机迎击敌机�
 
 ## References 参考
 
-OpenNARS: https://github.com/opennars/opennars
+OpenNARS: <https://github.com/opennars/opennars>
 
-ONA: https://github.com/opennars/OpenNARS-for-Applications
+ONA: <https://github.com/opennars/OpenNARS-for-Applications>
 
-NARS-Pong in Unity3D: https://github.com/ccrock4t/NARS-Pong
+NARS-Pong in Unity3D: <https://github.com/ccrock4t/NARS-Pong>
 
-(原repo) NARS-FighterPlane by Boyang Xu: https://github.com/Noctis-Xu/NARS-FighterPlane
+(原repo) NARS-FighterPlane by Boyang Xu: <https://github.com/Noctis-Xu/NARS-FighterPlane>
 
 ## Some tests 测试案例
 
