@@ -13,7 +13,7 @@ class NARSType(Enum):
     OPENNARS:str = 'opennars'
     ONA:str = 'ONA'
 
-from NARS import NARSOperation # 导入操作以便打包
+from NARS import NARSOperation, NARSPerception # 导入操作以便打包
 
 """具体与纳思通信的「程序」
 核心功能：负责与「NARS的具体计算机实现」沟通
@@ -28,6 +28,8 @@ class NARSProgram:
         if type == NARSType.ONA:
             return ONA()
     
+    # 程序/进程相关 #
+    
     def __init__(self, operationHook=None):
         "初始化NARS程序：启动命令行、连接「NARS计算机实现」、启动线程"
         "推理循环频率"
@@ -37,7 +39,7 @@ class NARSProgram:
         self.launch_nars()
         self.launch_thread()
 
-    # 🆕用析构函数替代「process_kill」方法
+    # 用析构函数替代「process_kill」方法
     def __del__(self):
         "程序结束时，自动终止NARS"
         self.process.send_signal(signal.CTRL_C_EVENT)
@@ -65,9 +67,17 @@ class NARSProgram:
         )
         self.read_line_thread.daemon = True  # thread dies with the exit of the program
         self.read_line_thread.start()
+    
+    # 语句相关 #
+    def parse_perception_sentence(self, perception:NARSPerception) -> str:
+        "🆕解析「感知语句」"
+        # TODO：将「具体语句实现」分离至Program，从而让NARSAgent无需涉及具体的语句实现
+        # 并且，这也可以被后续继承的NARSProgram重载，以实现「不同NARS程序使用不同NAL语法」
+        return NARSProgram.SENSE_TEMPLETE % (perception.object, perception.adjective)
+    
+    # 运行时相关 #
 
     def read_line(self, out):  # read line without blocking
-        # TODO：这两个命令行函数需要进行「去耦合」：把命令行解析在此处处理，而处理得到的操作暴露给Agent
         "读取程序的（命令行）输出"
         for line in iter(out.readline, b'\n'):  # get operations
             if operation_name := self.catch_operation_name(line): # 从一行语句中获得操作
