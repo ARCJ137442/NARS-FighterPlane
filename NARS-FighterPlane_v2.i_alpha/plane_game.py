@@ -3,7 +3,7 @@
 
 import sys
 from game_sprites import *
-from NARS import NARSAgent, NARSOperation, NARSType
+from NARS import NARSAgent, NARSOperation, NARSType, NARSPerception, NARSSensor
 
 # 注册游戏事件
 CREATE_ENEMY_EVENT = pygame.USEREVENT
@@ -12,12 +12,12 @@ OPENNARS_BABBLE_EVENT = pygame.USEREVENT + 2
 INGAME_CLOCK_EVENT = pygame.USEREVENT + 3 # 游戏内时间计数（速度可调之后）
 
 # 尝试进行数据分析
-ENABLE_GAME_DATA_PLOT:bool = False
+ENABLE_GAME_DATA_RECORD:bool = False
 try:
     import matplotlib.pyplot as plt
     import pandas as pd
     import multiprocessing as mp
-    ENABLE_GAME_DATA_PLOT = True
+    ENABLE_GAME_DATA_RECORD = True
 except:
     pass
 
@@ -46,22 +46,39 @@ class NARSPlanePlayer(NARSAgent):
     GOAL_GOOD:str = 'good'
     GOAL_BAD:str = 'bad' # 负向目标
     
-    # 只需要名字，其会被自动转换为「{对象名}」
+    # 定义感知名
+    
+    # 对象：只需要名字，其会被自动转换为「{对象名}」
     OBJECT_ENEMY:str = 'enemy'
     
-    # 只需要名字，其会被自动转换为「[状态名]」
-    SENSE_LEFT:str = 'left'
-    SENSE_RIGHT:str = 'right'
-    SENSE_AHEAD:str = 'ahead'
+    # 状态：只需要名字，其会被自动转换为「[状态名]」
+    ADJECTIVE_LEFT:str = 'left'
+    ADJECTIVE_RIGHT:str = 'right'
+    ADJECTIVE_AHEAD:str = 'ahead'
+    
+    ADJECTIVE_EDGE_LEFT:str = 'edge_left'
+    ADJECTIVE_EDGE_RIGHT:str = 'edge_right'
+    
+    ADJECTIVE_STILL:str = 'still' # 感知自身运动状态
+    ADJECTIVE_MOVING_LEFT:str = 'moving_left'
+    ADJECTIVE_MOVING_RIGHT:str = 'moving_right'
+    
+    ADJECTIVE_NEARBY:str = 'nearby' # 感知敌机垂直位置
+    
+    # 根据词项生成（静态）感知
+    SNESE_ENEMY_LEFT:NARSPerception = NARSPerception(OBJECT_ENEMY, ADJECTIVE_LEFT)
+    SNESE_ENEMY_RIGHT:NARSPerception = NARSPerception(OBJECT_ENEMY, ADJECTIVE_RIGHT)
+    SNESE_ENEMY_AHEAD:NARSPerception = NARSPerception(OBJECT_ENEMY, ADJECTIVE_AHEAD)
     
     # 定义新感知
-    SENSE_EDGE_LEFT:str = 'edge_left'
-    SENSE_EDGE_RIGHT:str = 'edge_right'
+    SNESE_ENEMY_NEARBY:NARSPerception = NARSPerception(OBJECT_ENEMY, ADJECTIVE_NEARBY)
     
-    SENSE_STILL:str = 'still' # 🆕感知自身运动状态
-    SENSE_MOVING_LEFT:str = 'moving_left'
-    SENSE_MOVING_RIGHT:str = 'moving_right'
-    SENSE_NEARBY:str = 'nearby' # 感知敌机垂直位置
+    SENSE_EDGE_LEFT:NARSPerception = NARSPerception.new_self(ADJECTIVE_EDGE_LEFT)
+    SENSE_EDGE_RIGHT:NARSPerception = NARSPerception.new_self(ADJECTIVE_EDGE_RIGHT)
+    
+    SNESE_MOVING_LEFT:NARSPerception = NARSPerception.new_self(ADJECTIVE_MOVING_LEFT)
+    SNESE_MOVING_RIGHT:NARSPerception = NARSPerception.new_self(ADJECTIVE_MOVING_RIGHT)
+    SNESE_STILL:NARSPerception = NARSPerception.new_self(ADJECTIVE_STILL)
     
     def __init__(self, nars_type: NARSType = None):
         super().__init__(
@@ -69,6 +86,10 @@ class NARSPlanePlayer(NARSAgent):
             mainGoal = NARSPlanePlayer.GOAL_GOOD,
             mainGoal_negative = NARSPlanePlayer.GOAL_BAD
             ) # 目标：「good」
+        # 🆕添加感知器
+        self.add_sensor(NARSSensor(NARSPlanePlayer.sensor_edge)) # 边界感知
+        self.add_sensor(NARSSensor(NARSPlanePlayer.sensor_moving)) # 移动感知
+        self.add_sensor(NARSSensor(NARSPlanePlayer.sensor_enemy)) # 对敌感知
     
     def handle_program_operation(self, operation:NARSOperation):
         # 操作名的「别名分发」
@@ -102,70 +123,89 @@ class NARSPlanePlayer(NARSAgent):
             # print('fire')
             pass
     
-    def update_sensors(self, **sense_targets):
-        "感知更新部分"
+    @staticmethod
+    def sensor_moving(*sense_args:tuple, **sense_targets:dict) -> list[NARSPerception]:
+        "自我移动感知"
+        # 提取参数
+        if not (hero:= sense_targets.get('hero')):
+            print('No required target!')
+            return []
         
-        # 获取参数（此处明确「感知」的含义） #
-        hero:Hero = sense_targets['hero'] # 自身「英雄」状态
-        enemy_group = sense_targets['enemy_group'] # 敌机s
+        # 速度感：感知自己的运动速度
         
-        # TODO：将各个「感知模块」抽象出一个「感知目标→感知词项组」的「感知器」类，这样此处只需要遍历感知器并给予其参数
-        # for sensor in self.sensors: # 一个智能体有多个「感官/知觉」
-        #     senses:list[tuple[str,str]] = sensor(**sense_targets) # 直接把参数分派给各个「sensor函数」，让sensor从中提取「[主语,形容词]」的感知
-        #     for obj,adj in senses: # 一个感官可能返回多个「感知语句」
-        #         self.add_sense_object(obj,adj) # 统一添加「感知觉」
-        
-        # 自我感知 
-
+        return [(
+            NARSPlanePlayer.SNESE_STILL
+            if hero.isAtEdge or hero.speed == 0
+            else NARSPlanePlayer.SNESE_MOVING_LEFT
+            if hero.speed < 0
+            else NARSPlanePlayer.SNESE_MOVING_RIGHT
+        )] # 因为图形「先移动再约束」的运作方式，边界上的「速度」不为零但确实是停下来的
+    
+    @staticmethod
+    def sensor_edge(*sense_args:tuple, **sense_targets:dict) -> list[NARSPerception]:
+        "边界感知"
+        result:list[NARSPerception] = []
+        # 提取参数
+        if not (hero:= sense_targets.get('hero')):
+            print('No required target!')
+            return result
         # 感知自身「是否在边界上」
         if iae:=hero.isAtEdge:
-            self.add_sense_self(
+            result.append(
                 NARSPlanePlayer.SENSE_EDGE_LEFT if iae<0 # 左边界
                 else NARSPlanePlayer.SENSE_EDGE_RIGHT #右边界
             )
             # self.punish() # 惩罚效果更差？
             # print(f'at edge {iae}')
-            pass
+
+        return result
+    
+    @staticmethod
+    def sensor_enemy(*sense_args:tuple, **sense_targets:dict) -> list[NARSPerception]:
+        "对敌感知（从感知器调用）"
+        result:list[NARSPerception] = []
         
-        # 🆕速度感：感知自己的运动速度
-        
-        if hero.isAtEdge or hero.speed == 0: # 因为图形「先移动再约束」的运作方式，边界上的「速度」不为零但确实是停下来的
-            self.add_sense_self(NARSPlanePlayer.SENSE_STILL)
-        elif hero.speed < 0:
-            self.add_sense_self(NARSPlanePlayer.SENSE_LEFT)
-        elif hero.speed > 0:
-            self.add_sense_self(NARSPlanePlayer.SENSE_MOVING_RIGHT)
-        
-        # 对敌感知 #
+        if (
+            not (hero:= sense_targets.get('hero'))
+            or (enemy_group:= sense_targets.get('enemy_group')) == None
+        ):
+            print('No required target!')
+            return result
         
         # 敌机（总）方位
         
         # 💭似乎「对每一个敌机进行一次感知」的「基于单个个体的感知」比原来「基于是否有敌机的感知」更能让NARS获得「敌机（大概）在何处」的信息
-        # enemy_left = False
-        # enemy_right = False
-        # enemy_ahead = False
+        enemy_left = False
+        enemy_right = False
+        enemy_ahead = False
+        enemy_nearby = False
         
         for enemy in enemy_group.sprites():
             # 敌机左右位置感知
             if enemy.rect.right < hero.rect.centerx:
-                self.add_sense_object(NARSPlanePlayer.OBJECT_ENEMY, NARSPlanePlayer.SENSE_LEFT)
-                # enemy_left = True
+                # result.append(NARSPlanePlayer.SNESE_ENEMY_LEFT)
+                enemy_left = True
             elif hero.rect.centerx < enemy.rect.left:
-                self.add_sense_object(NARSPlanePlayer.OBJECT_ENEMY, NARSPlanePlayer.SENSE_RIGHT)
-                # enemy_right = True
+                # result.append(NARSPlanePlayer.SNESE_ENEMY_RIGHT)
+                enemy_right = True
             else:  # enemy.rect.left <= hero.rect.centerx and hero.rect.centerx <= enemy.rect.right
-                self.add_sense_object(NARSPlanePlayer.OBJECT_ENEMY, NARSPlanePlayer.SENSE_AHEAD)
-                # enemy_ahead = True
+                # result.append(NARSPlanePlayer.SNESE_ENEMY_AHEAD)
+                enemy_ahead = True
             # 🆕敌机前后位置感知：是否「在旁边」
             if enemy.rect.bottom < hero.rect.top: # 检查是否可能与hero有接触
-                self.add_sense_object(NARSPlanePlayer.OBJECT_ENEMY, NARSPlanePlayer.SENSE_NEARBY)
-        return
+                # result.append(NARSPlanePlayer.SNESE_ENEMY_NEARBY)
+                enemy_nearby = True
+        
         if enemy_left:
-            self.add_sense_object(NARSPlanePlayer.OBJECT_ENEMY,NARSPlanePlayer.SENSE_LEFT)
+            result.append(NARSPlanePlayer.SNESE_ENEMY_LEFT)
         if enemy_right:
-            self.add_sense_object(NARSPlanePlayer.OBJECT_ENEMY,NARSPlanePlayer.SENSE_RIGHT)
+            result.append(NARSPlanePlayer.SNESE_ENEMY_RIGHT)
         if enemy_ahead:
-            self.add_sense_object(NARSPlanePlayer.OBJECT_ENEMY,NARSPlanePlayer.SENSE_AHEAD)
+            result.append(NARSPlanePlayer.SNESE_ENEMY_AHEAD)
+        if enemy_nearby:
+            result.append(NARSPlanePlayer.SNESE_ENEMY_NEARBY)
+        
+        return result
     
     def handle_operations(self, hero:Hero):
         "分模块：处理NARS发送的操作（返回：是否有操作被执行）"
@@ -233,7 +273,7 @@ class PlaneGame:
         self.num_melt_down_before_restore:int = 0 # 游戏速度在恢复前熔断的次数
         
         # 把数据存在游戏里
-        if ENABLE_GAME_DATA_PLOT:
+        if ENABLE_GAME_DATA_RECORD:
             self.gameDatas:pd.DataFrame = pd.DataFrame(
                 [],
                 columns=[
@@ -290,7 +330,7 @@ class PlaneGame:
         self.nars:NARSPlanePlayer = NARSPlanePlayer(type)
         # 既然在这里就凭借「NARS的程序实现」类型区分「是否babble」，那也不妨把babble看做一个「通用行为」
         self.remaining_babble_times:int = (
-            200 if type == NARSType.OPENNARS
+            200 if self.nars.need_babble
             else 0
         )
 
@@ -307,6 +347,7 @@ class PlaneGame:
 
     def __event_handler(self):
         "处理事件"
+        global ENABLE_GAME_DATA_RECORD
         dt:int = self.speeding_delta_time_s - self.last_display_update_time
         # 熔断恢复
         if dt <= 0 and self.speed_melt_down > 0: # 卡顿后恢复
@@ -397,7 +438,7 @@ class PlaneGame:
                 elif key == pygame.K_c:
                     self.remove_all_enemy()
                 # P：展示游戏数据
-                elif key == pygame.K_p and ENABLE_GAME_DATA_PLOT:
+                elif key == pygame.K_p and ENABLE_GAME_DATA_RECORD:
                     if key_mods & pygame.KMOD_ALT:
                         mp.Process(target=saveDatas, args=(self.gameDatas,)).start()
                     else:
@@ -423,9 +464,14 @@ class PlaneGame:
                     else:
                         self.nars.put_goal(self.nars.mainGoal)
                         print(f'Current goals: +{self.nars.mainGoal} | -{self.nars.mainGoal_negative}')
+                # O：向NARS输入「无意识操作」
+                elif key == pygame.K_o:
+                    self.nars.force_unconscious_operation(
+                        NARSOperation(input(f'Please input the name of operation: '))
+                    )
                 # N：输入NAL语句（不推荐！）
                 elif key == pygame.K_n:
-                    self.nars.brain.add_to_cmd(input('Please input your NAL sentence(unstable): '))
+                    self.nars.brain._add_to_cmd(input('Please input your NAL sentence(unstable): '))
                 # B：添加/移除babble
                 elif key == pygame.K_b:
                     if key_mods & pygame.KMOD_ALT: # Alt+B：执行一个babble
@@ -445,13 +491,17 @@ class PlaneGame:
                         self.nars.enable_brain_control ^= True # 异或翻转
                     else: # 感知
                         self.nars.enable_brain_sense ^= True
+                # D：暂停/恢复记录数据
+                elif key == pygame.K_d:
+                    ENABLE_GAME_DATA_RECORD ^= True # 异或翻转
+                    print(f'Data recoding {"on" if ENABLE_GAME_DATA_RECORD else "off"}')
                 # 空格/上：射击
                 elif key == pygame.K_SPACE or key == pygame.K_UP:
                     self.nars.force_unconscious_operation(NARSPlanePlayer.OPERATION_FIRE)
         # NARS 执行操作（时序上依赖游戏，而非NARS程序）
         self.nars.handle_operations(self.hero) # 解耦：封装在「NARSPlanePlayer」中
         # 记录游戏数据
-        ENABLE_GAME_DATA_PLOT and self.collectDatas()
+        ENABLE_GAME_DATA_RECORD and self.collectDatas()
 
     def __check_collide(self):
         "检查碰撞"
@@ -550,7 +600,7 @@ class PlaneGame:
         print("Game over...")
         exit()
 
-if ENABLE_GAME_DATA_PLOT:
+if ENABLE_GAME_DATA_RECORD:
     
     from math import ceil
     def plotDatas(datas:pd.DataFrame):
@@ -600,7 +650,7 @@ if __name__ == '__main__':
     nars_type:NARSType = (
         NARSType(sys.argv[1]) if len(sys.argv)>1
         else NARSType(type)
-        if (type:=input("Please input the type of NARS(opennars(default)/ONA): "))
+        if (type:=input("Please input the type of NARS(opennars(default)/ONA/python): "))
         else NARSType.OPENNARS
     )
     game_speed:float = float(
