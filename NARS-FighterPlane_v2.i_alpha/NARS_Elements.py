@@ -83,9 +83,13 @@ class NARSSensor():
         self.enabled:bool = True
         self._perceiveHook = perceiveHook
     
-    def sense(self,*sense_args:tuple, **sense_targets:dict) -> list[NARSPerception]:
+    def sense(self,*sense_args:tuple, **sense_targets:dict) -> list[NARSPerception] | tuple[NARSPerception]:
         "感知器的通用调用接口（一定返回感知信息，enabled仅用于NARSAgent的调用之中）"
         return self._perceiveHook(*sense_args, **sense_targets) # 支持外部函数
+    
+    def __call__(self,*sense_args:tuple, **sense_targets:dict) -> list[NARSPerception] | tuple[NARSPerception]:
+        "（语法糖）重载「被调用」语法，快速获取操作"
+        return self.sense(*sense_args, **sense_targets)
     
     @property
     def perceiveHook(self):

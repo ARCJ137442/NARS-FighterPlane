@@ -67,14 +67,14 @@ class NARSAgent:
     
     def disconnect_brain(self):
         "与游戏「解耦」，类似「断开连接」的作用"
-        del self.brain # TODO 这里的作用不甚明了……应该是「暂停程序运行」，但实际上「删掉了自己的大脑」
+        self.brain.terminate() # 终止程序运行
         self.brain = None # 空置，以便下一次定义
 
     def update(self, *sense_args:tuple, **sense_targets:dict):  # update sensors (object positions), remind goals, and make inference
         "NARS在环境中的行动：感知更新→目标提醒→推理步进"
         self.update_sensors(*sense_args, **sense_targets)
-        self.put_goal(self.mainGoal) # 原「remind_goal」：时刻提醒智能体要做的事情
-        self.put_goal(self.mainGoal_negative, True) # 时刻提醒智能体*不要做*的事情
+        self.mainGoal and self.put_goal(self.mainGoal) # 原「remind_goal」：时刻提醒智能体要做的事情
+        self.mainGoal_negative and self.put_goal(self.mainGoal_negative, True) # 时刻提醒智能体*不要做*的事情
         self._inference_step()
     
     # 语句相关 #
@@ -90,7 +90,7 @@ class NARSAgent:
         for sensor in self._sensors:
             if sensor.enabled: # 仅当感知器启用时遍历
                 # 遍历获得的所有「感知」
-                for perception in sensor.sense(*sense_args, **sense_targets):
+                for perception in sensor(*sense_args, **sense_targets):
                     self.add_perception(perception)
     
     def add_perception(self, perception:NARSPerception) -> None:
@@ -111,6 +111,14 @@ class NARSAgent:
     def total_senses(self) -> int:
         "获取从外界获得的感知次数"
         return self._total_sense_inputs
+    
+    @property
+    def num_cached_cmds(self) -> int:
+        return self.brain.num_cached_cmds
+    
+    def clear_cached_cmds(self) -> None:
+        "清除自身「大脑」缓存的命令"
+        return self.brain.clear_cached_cmds()
     
     # 目标相关 #
     def put_goal(self, goalName:str, is_negative:bool = False):
@@ -145,6 +153,15 @@ class NARSAgent:
             for name in self._operation_container
             }.__iter__() # 返回字典的迭代器
     
+    def register_basic_operation(self, operation:NARSOperation):
+        return self.brain.register_basic_operation(operation=operation)
+    
+    def register_basic_operations(self, *operations:list[NARSOperation]):
+        return [
+            self.register_basic_operation(operation=operation)
+            for operation in operations
+        ]
+    
     def handle_program_operation(self, operation:NARSOperation):
         "对接命令行与游戏：根据NARS程序返回的操作字符串，存储相应操作"
         if self.enable_brain_control: # 需要启用「大脑操作」
@@ -156,24 +173,25 @@ class NARSAgent:
         "反应NARS是否需要最初的babble"
         return self.brain.enable_babble
     
-    def babble(self, probability:int=1, operations=[]):
+    def babble(self, probability:int=1, operations=[], force_operation:bool=True):
         "随机行为，就像婴儿的牙牙学语（有概率）" # 🆕为实现「与具体实现程序形式」的分离，直接提升至Agent层次
         if not probability or random.randint(1,probability) == 1: # 几率触发
             self.force_unconscious_operation(
-                random.choice(operations) # 随机取一个NARS操作
+                random.choice(operations), # 随机取一个NARS操作
+                force_operation # 一定要做出操作吗？
             ) # 相当于「强制无意识操作」
     
-    def force_unconscious_operation(self, operation:NARSOperation):
+    def force_unconscious_operation(self, operation:NARSOperation, force_operation:bool=True):
         "强制「无意识操作」：让智能体执行，仅告诉NARS程序「我执行了这个操作」"
         self.brain.put_unconscious_operation(operation=operation)
-        self.store_operation(operation) # 智能体：执行操作
+        force_operation and self.store_operation(operation) # 智能体：执行操作
     
     def store_operation(self, operation:NARSOperation):
         "存储对应操作，更新自身状态"
         self[operation] = True # 直接设置对应「要执行的操作」为真
     
     @property
-    def stored_operation_names(self) -> dict[NARSOperation:bool]:
+    def stored_operation_dict(self) -> dict[NARSOperation:bool]:
         "获取自己存储的操作字典（复制新对象）"
         return self._operation_container.copy() # 一个新字典
     
@@ -183,11 +201,11 @@ class NARSAgent:
         return self._operation_container.keys() # 一个新字典
     
     @property
-    def active_operations(self):
+    def active_operation_names(self):
         "获取被激活的操作（迭代器）"
         return (
             operation
-            for operation,isActive in self._operation_container.items()
+            for operation, isActive in self._operation_container.items()
             if isActive
         )
     

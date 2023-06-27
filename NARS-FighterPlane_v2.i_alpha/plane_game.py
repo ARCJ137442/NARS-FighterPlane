@@ -86,23 +86,25 @@ class NARSPlanePlayer(NARSAgent):
             mainGoal = NARSPlanePlayer.GOAL_GOOD,
             mainGoal_negative = NARSPlanePlayer.GOAL_BAD
             ) # 目标：「good」
-        # 🆕添加感知器
+        # 添加感知器
         self.add_sensor(NARSSensor(NARSPlanePlayer.sensor_edge)) # 边界感知
         self.add_sensor(NARSSensor(NARSPlanePlayer.sensor_moving)) # 移动感知
         self.add_sensor(NARSSensor(NARSPlanePlayer.sensor_enemy)) # 对敌感知
     
     def handle_program_operation(self, operation:NARSOperation):
-        # 操作名的「别名分发」
-        
-        # fire = strike
-        if operation.name == 'fire':
-            operation = NARSPlanePlayer.OPERATION_FIRE
-        
-        # 添加操作
-        super().handle_program_operation(operation)
+        "操作名的「别名分发」"
         
         # 打印操作以跟踪
         print(operation.value)
+        
+        # fire = strike
+        if operation.name in ['fire', 'up']: # 更多是用于ONA
+            operation = NARSPlanePlayer.OPERATION_FIRE
+        elif operation.name in ['down']: # 更多是用于ONA
+            operation = NARSPlanePlayer.OPERATION_DEACTIVATE
+        
+        # 添加操作
+        super().handle_program_operation(operation)
     
     def store_operation(self, operation: NARSOperation):
         "重构：处理「冲突的移动方式」"
@@ -401,6 +403,7 @@ class PlaneGame:
             # NARS 状态更新
             elif event.type == UPDATE_NARS_EVENT:
                 self.nars.update(hero=self.hero, enemy_group=self.enemy_group)  # use objects' positions to update NARS's sensors
+                pass
             # NARS babble
             elif event.type == OPENNARS_BABBLE_EVENT:
                 if self.remaining_babble_times <= 0:
@@ -411,98 +414,115 @@ class PlaneGame:
                     self.remaining_babble_times -= 1
                     print('The remaining babble times: ' + str(self.remaining_babble_times))
             # 键盘按键
-            elif event.type == pygame.KEYUP:
-                # 左右移动 PartⅡ：停止算法
-                if event.key == pygame.K_LEFT or event.key == pygame.K_RIGHT:
-                    self.nars.force_unconscious_operation(NARSPlanePlayer.OPERATION_DEACTIVATE)
-            elif event.type == pygame.KEYDOWN:
-                key:int = event.key
-                key_mods:int = pygame.key.get_mods() # 键盘按键模式检测
-                # +/-：调整游戏速度（不影响事件派发？）
-                if key == pygame.K_EQUALS: # 是等号键
-                    if key_mods & pygame.KMOD_CTRL: # 倍速
-                        self.game_speed *= 2
-                    elif key_mods & pygame.KMOD_ALT: # 自动加速模块
-                        self.auto_speed_delta += 0.1
-                        print(f'Automatic acceleration with dv={self.auto_speed_delta}')
-                    else:
-                        self.game_speed += 0.25
-                elif key == pygame.K_MINUS:
-                    if key_mods & pygame.KMOD_SHIFT: # 重置速度回1
-                        self.game_speed = 1.0
-                    elif key_mods & pygame.KMOD_CTRL: # 半速
-                        self.game_speed *= 0.5
-                    else:
-                        self.game_speed -= 0.25 # 有「避免非负机制」
-                # C：清除所有敌机
-                elif key == pygame.K_c:
-                    self.remove_all_enemy()
-                # P：展示游戏数据
-                elif key == pygame.K_p and ENABLE_GAME_DATA_RECORD:
-                    if key_mods & pygame.KMOD_ALT:
-                        mp.Process(target=saveDatas, args=(self.gameDatas,)).start()
-                    else:
-                        mp.Process(target=plotDatas, args=(self.gameDatas,)).start()
-                # 左右移动/停止（传入NARS构成BABBLE）
-                elif key == pygame.K_LEFT:
-                    self.nars.force_unconscious_operation(NARSPlanePlayer.OPERATION_LEFT)
-                elif key == pygame.K_RIGHT:
-                    self.nars.force_unconscious_operation(NARSPlanePlayer.OPERATION_RIGHT)
-                elif key == pygame.K_DOWN:
-                    self.nars.force_unconscious_operation(NARSPlanePlayer.OPERATION_DEACTIVATE)
-                # U：开关「是否惩罚」
-                elif key == pygame.K_u:
-                    self.enable_punish ^= True
-                    print(f'NARS punishments {"on" if self.enable_punish else "off"}.')
-                # G：操作目标
-                elif key == pygame.K_g:
-                    if key_mods & pygame.KMOD_CTRL: # +Ctrl: 重置目标
-                        if key_mods & pygame.KMOD_SHIFT: # +Shift: 重置负向目标
-                            self.nars.mainGoal_negative = input(f'Please input a new goal to replace [{self.nars.mainGoal}]: ')
-                        else:
-                            self.nars.mainGoal = input(f'Please input a new goal to replace [{self.nars.mainGoal}]: ')
-                    else:
-                        self.nars.put_goal(self.nars.mainGoal)
-                        print(f'Current goals: +{self.nars.mainGoal} | -{self.nars.mainGoal_negative}')
-                # O：向NARS输入「无意识操作」
-                elif key == pygame.K_o:
-                    self.nars.force_unconscious_operation(
-                        NARSOperation(input(f'Please input the name of operation: '))
-                    )
-                # N：输入NAL语句（不推荐！）
-                elif key == pygame.K_n:
-                    self.nars.brain._add_to_cmd(input('Please input your NAL sentence(unstable): '))
-                # B：添加/移除babble
-                elif key == pygame.K_b:
-                    if key_mods & pygame.KMOD_ALT: # Alt+B：执行一个babble
-                        self.nars.babble(1, NARSPlanePlayer.BABBLE_OPERATION_LIST)
-                    else:
-                        self.remaining_babble_times += (
-                            -10 if key_mods & pygame.KMOD_SHIFT
-                            else 10
-                            ) # 可以用Shift指定加减
-                        if self.remaining_babble_times <= 0:
-                            self.remaining_babble_times = 0 # 莫溢出
-                        else: # 重新开始监听事件
-                            pygame.event.set_allowed(OPENNARS_BABBLE_EVENT)
-                # E：开启/关闭NARS的感知/操作
-                elif key == pygame.K_e:
-                    if key_mods & pygame.KMOD_SHIFT: # 操作
-                        self.nars.enable_brain_control ^= True # 异或翻转
-                    else: # 感知
-                        self.nars.enable_brain_sense ^= True
-                # D：暂停/恢复记录数据
-                elif key == pygame.K_d:
-                    ENABLE_GAME_DATA_RECORD ^= True # 异或翻转
-                    print(f'Data recoding {"on" if ENABLE_GAME_DATA_RECORD else "off"}')
-                # 空格/上：射击
-                elif key == pygame.K_SPACE or key == pygame.K_UP:
-                    self.nars.force_unconscious_operation(NARSPlanePlayer.OPERATION_FIRE)
+            elif (is_up:=event.type == pygame.KEYUP) or event.type == pygame.KEYDOWN:
+                self.__handle_keys(
+                    key = event.key,
+                    key_mods = pygame.key.get_mods(), # 键盘按键模式检测
+                    isUp = is_up
+                )
         # NARS 执行操作（时序上依赖游戏，而非NARS程序）
         self.nars.handle_operations(self.hero) # 解耦：封装在「NARSPlanePlayer」中
         # 记录游戏数据
         ENABLE_GAME_DATA_RECORD and self.collectDatas()
 
+    def __handle_keys(self, key:int, key_mods:int, isUp:bool) -> None:
+        "捕捉键盘事件"
+        global ENABLE_GAME_DATA_RECORD
+        # 键盘弹起 #
+        if isUp:
+            # 左右移动 PartⅡ：停止算法
+            if key == pygame.K_LEFT or key == pygame.K_RIGHT:
+                self.nars.force_unconscious_operation(NARSPlanePlayer.OPERATION_DEACTIVATE)
+            return
+        # 键盘按下 #
+        # +/-：调整游戏速度（不影响事件派发？）
+        if key == pygame.K_EQUALS: # 是等号键
+            if key_mods & pygame.KMOD_CTRL: # 倍速
+                self.game_speed *= 2
+            elif key_mods & pygame.KMOD_ALT: # 自动加速模块
+                self.auto_speed_delta += 0.1
+                print(f'Automatic acceleration with dv={self.auto_speed_delta}')
+            else:
+                self.game_speed += 0.25
+        elif key == pygame.K_MINUS:
+            if key_mods & pygame.KMOD_SHIFT: # 重置速度回1 + 关闭自动加速
+                self.game_speed = 1.0
+                self.auto_speed_delta = 0
+            elif key_mods & pygame.KMOD_CTRL: # 半速
+                self.game_speed *= 0.5
+            else:
+                self.game_speed -= 0.25 # 有「避免非负机制」
+        # C：清除所有敌机
+        elif key == pygame.K_c:
+            print('All enemies removed.')
+            self.remove_all_enemy()
+        # P：展示游戏数据
+        elif key == pygame.K_p and ENABLE_GAME_DATA_RECORD:
+            if key_mods & pygame.KMOD_ALT:
+                mp.Process(target=saveDatas, args=(self.gameDatas,)).start()
+            else:
+                mp.Process(target=plotDatas, args=(self.gameDatas,)).start()
+        # 左右移动/停止（传入NARS构成BABBLE）
+        elif key == pygame.K_LEFT:
+            self.nars.force_unconscious_operation(NARSPlanePlayer.OPERATION_LEFT)
+        elif key == pygame.K_RIGHT:
+            self.nars.force_unconscious_operation(NARSPlanePlayer.OPERATION_RIGHT)
+        elif key == pygame.K_DOWN:
+            self.nars.force_unconscious_operation(NARSPlanePlayer.OPERATION_DEACTIVATE)
+        # U：开关「是否惩罚」
+        elif key == pygame.K_u:
+            self.enable_punish ^= True
+            print(f'NARS punishments {"on" if self.enable_punish else "off"}.')
+        # G：操作目标
+        elif key == pygame.K_g:
+            if key_mods & pygame.KMOD_CTRL: # +Ctrl: 重置目标
+                if key_mods & pygame.KMOD_SHIFT: # +Shift: 重置负向目标
+                    self.nars.mainGoal_negative = input(f'Please input a new goal to replace [{self.nars.mainGoal}]: ')
+                else:
+                    self.nars.mainGoal = input(f'Please input a new goal to replace [{self.nars.mainGoal}]: ')
+            else:
+                self.nars.put_goal(self.nars.mainGoal)
+                print(f'Current goals: +{self.nars.mainGoal} | -{self.nars.mainGoal_negative}')
+        # O：向NARS输入「无意识操作」
+        elif key == pygame.K_o:
+            self.nars.force_unconscious_operation(
+                NARSOperation(input(f'Please input the name of operation: '))
+            )
+        # N：输入NAL语句（不推荐！）
+        elif key == pygame.K_n:
+            self.nars.brain.write_line(input('Please input your NAL sentence(unstable): '))
+        # B：添加/移除babble
+        elif key == pygame.K_b:
+            if key_mods & pygame.KMOD_ALT: # Alt+B：执行一个babble
+                self.nars.babble(1, NARSPlanePlayer.BABBLE_OPERATION_LIST)
+            elif (key_mods & pygame.KMOD_SHIFT) and (key_mods & pygame.KMOD_CTRL): # Ctrl+Shift：移除Babble
+                self.remaining_babble_times = 0
+            else:
+                self.remaining_babble_times += (
+                    -10 if key_mods & pygame.KMOD_SHIFT
+                    else 10
+                    ) # 可以用Shift指定加减
+                if self.remaining_babble_times <= 0:
+                    self.remaining_babble_times = 0 # 莫溢出
+                else: # 重新开始监听事件
+                    pygame.event.set_allowed(OPENNARS_BABBLE_EVENT)
+        # E：开启/关闭NARS的感知/操作
+        elif key == pygame.K_e:
+            if key_mods & pygame.KMOD_SHIFT: # 操作
+                self.nars.enable_brain_control ^= True # 异或翻转
+            elif key_mods & pygame.KMOD_CTRL: # 感知/清除
+                print(f'{self.nars.num_cached_cmds} cached commands have been deleted.')
+                self.nars.clear_cached_cmds()
+            else: # 感知
+                self.nars.enable_brain_sense ^= True
+        # D：暂停/恢复记录数据
+        elif key == pygame.K_d:
+            ENABLE_GAME_DATA_RECORD ^= True # 异或翻转
+            print(f'Data recording {"on" if ENABLE_GAME_DATA_RECORD else "off"}')
+        # 空格/上：射击
+        elif key == pygame.K_SPACE or key == pygame.K_UP:
+            self.nars.force_unconscious_operation(NARSPlanePlayer.OPERATION_FIRE)
+    
     def __check_collide(self):
         "检查碰撞"
         # Several collisions may happen at the same time
