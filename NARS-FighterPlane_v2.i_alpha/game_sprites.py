@@ -1,7 +1,9 @@
 import pygame
 import random
 
-SCREEN_RECT = pygame.Rect(0, 0, 480, 700)  # the size of game window, Rect(left, top, width, height). left = x, top = y
+# the size of game window, Rect(left, top, width, height). left = x, top = y
+SCREEN_RECT = pygame.Rect(0, 0, 480, 700)
+
 
 class GameSprite(pygame.sprite.Sprite):
     def __init__(self, image_name, speed=1):
@@ -66,7 +68,7 @@ class Hero(GameSprite):
         elif self.rect.right >= SCREEN_RECT.right:  # check the right boundary
             return 1
         return 0
-    
+
     def fire(self):
         # print("fire")
         for i in [0]:

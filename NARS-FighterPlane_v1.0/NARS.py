@@ -6,19 +6,21 @@ import signal
 
 
 class NARS:
-    
-    TYPE_OPENNARS:str = 'opennars'
-    TYPE_ONA:str = 'ONA'
-    
+
+    TYPE_OPENNARS: str = 'opennars'
+    TYPE_ONA: str = 'ONA'
+
     @staticmethod
-    def create(type:str):
-        if type == NARS.TYPE_OPENNARS:
-            return opennars()
-        if type == NARS.TYPE_ONA:
-            return ONA()
-    
+    def create(type: str):
+        match type.lower():
+            case 'opennars':
+                return opennars()
+            case 'ona':
+                return ONA()
+
     def __init__(self, nars_type):  # nars_type: 'opennars' or 'ONA'
-        self.inference_cycle_frequency = 1  # set too large will get delayed and slow down the game
+        # set too large will get delayed and slow down the game
+        self.inference_cycle_frequency = 1
         self.operation_left = False
         self.operation_right = False
         self.type = nars_type
@@ -31,10 +33,16 @@ class NARS:
                                         stdout=subprocess.PIPE,
                                         universal_newlines=True,  # convert bytes to text/string
                                         shell=False)
-        if self.type == 'opennars':
-            self.add_to_cmd('java -Xmx1024m -jar opennars.jar')  # self.add_to_cmd('java -Xmx2048m -jar opennars.jar')
-        elif self.type == 'ONA':
-            self.add_to_cmd('NAR shell')
+        # 📝现在Python也有模式匹配了（虽然还是语句）
+        match self.type.lower():
+            case 'opennars':
+                # self.add_to_cmd('java -Xmx2048m -jar opennars.jar')
+                self.add_to_cmd('java -Xmx1024m -jar opennars.jar')
+            case 'ona':
+                self.add_to_cmd('ona')
+                self.add_to_cmd('NAR shell')
+            case _:
+                raise ValueError(f'未知的NARS类型: {self.type}')
         self.add_to_cmd('*volume=0')
 
     def launch_thread(self):
@@ -61,7 +69,8 @@ class NARS:
         self.process.stdin.write(f'{num}\n')
         self.process.stdin.flush()
 
-    def update(self, hero, enemy_group):  # update sensors (object positions), remind goals, and make inference
+    # update sensors (object positions), remind goals, and make inference
+    def update(self, hero, enemy_group):
         self.update_sensors(hero, enemy_group)
         self.remind_goal()
         self.add_inference_cycles(self.inference_cycle_frequency)
